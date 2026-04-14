@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SQL Shield — Audit Log</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #c9d1d9; }
+header { background: #161b22; border-bottom: 1px solid #30363d; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+header h1 { font-size: 1.15rem; color: #58a6ff; font-weight: 600; }
+header .ts { margin-left: auto; font-size: 0.75rem; color: #8b949e; }
+.stats { display: flex; gap: 12px; padding: 20px 24px 0; }
+.stat { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 20px; min-width: 100px; text-align: center; }
+.stat .n { font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+.stat .l { font-size: 0.72rem; color: #8b949e; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+.s-total  .n { color: #58a6ff; }
+.s-blocked .n { color: #f85149; }
+.s-allowed .n { color: #3fb950; }
+.s-off    .n { color: #8b949e; }
+.toolbar { padding: 14px 24px 8px; display: flex; gap: 8px; align-items: center; }
+.fb { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px; padding: 4px 12px; font-size: 0.78rem; cursor: pointer; }
+.fb.active { background: #1f6feb; border-color: #1f6feb; }
+.wrap { padding: 0 24px 24px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th { background: #161b22; color: #8b949e; padding: 8px 10px; text-align: left; border-bottom: 1px solid #30363d; font-weight: 500; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+td { padding: 7px 10px; border-bottom: 1px solid #21262d; vertical-align: middle; }
+tr.main:hover td { background: #1c2128; cursor: pointer; }
+.v-BLOCKED    { color: #f85149; font-weight: 600; }
+.v-ALLOWED    { color: #3fb950; font-weight: 600; }
+.v-SHIELD_OFF { color: #8b949e; }
+.src { background: #21262d; border-radius: 3px; padding: 2px 6px; font-size: 0.73rem; }
+.qt  { font-size: 0.72rem; color: #8b949e; border: 1px solid #30363d; border-radius: 3px; padding: 1px 5px; }
+.rules { color: #e3b341; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.detail-row td { background: #0d1117 !important; padding: 0; border-bottom: 1px solid #30363d; }
+.di { padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+.dl { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+.dv { font-family: monospace; font-size: 0.78rem; word-break: break-all; }
+.dv.raw  { color: #a5d6ff; }
+.dv.norm { color: #7ee787; }
+.dv.fp   { color: #d2a8ff; }
+.ttag { background: #1f2d1f; color: #7ee787; border-radius: 3px; padding: 2px 6px; font-size: 0.73rem; display: inline-block; margin: 2px; }
+.empty { text-align: center; color: #8b949e; padding: 60px; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  <h1>SQL Shield &mdash; Audit Log</h1>
+  <span class="ts" id="ts"></span>
+</header>
+<div class="stats" id="stats"></div>
+<div class="toolbar">
+  <span style="font-size:0.8rem;color:#8b949e">Filter:</span>
+  <button class="fb active" onclick="filter('ALL',this)">All</button>
+  <button class="fb" onclick="filter('BLOCKED',this)">Blocked</button>
+  <button class="fb" onclick="filter('ALLOWED',this)">Allowed</button>
+  <button class="fb" onclick="filter('SHIELD_OFF',this)">Shield off</button>
+</div>
+<div class="wrap">
+  <table>
+    <thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Verdict</th><th>Rules matched</th><th>Tables</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+<script>
+let _all = [], _f = 'ALL';
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function filter(f, btn){
+  _f = f;
+  document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function render(){
+  const rows = (_f==='ALL' ? _all : _all.filter(l=>l.final_action===_f)).slice().reverse();
+  if(!rows.length){
+    document.getElementById('tbody').innerHTML='<tr><td colspan="6" class="empty">No queries logged yet.</td></tr>';
+    return;
+  }
+  document.getElementById('tbody').innerHTML = rows.map((l,i)=>{
+    const rules = (l.engine_results[0]?.rule_ids||[]).join(', ')||'—';
+    const tables = l.tables.join(', ')||'—';
+    const t = new Date(l.timestamp*1000).toLocaleTimeString();
+    return `<tr class="main" onclick="toggle(this,${i})">
+      <td>${esc(t)}</td>
+      <td><span class="src">${esc(l.source_tag)}</span></td>
+      <td><span class="qt">${esc(l.query_type)}</span></td>
+      <td class="v-${esc(l.final_action)}">${esc(l.final_action)}</td>
+      <td class="rules" title="${esc(rules)}">${esc(rules)}</td>
+      <td style="font-size:0.78rem;color:#8b949e">${esc(tables)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function toggle(row, i){
+  const next = row.nextElementSibling;
+  if(next && next.classList.contains('detail-row')){ next.remove(); return; }
+  const rows = (_f==='ALL' ? _all : _all.filter(l=>l.final_action===_f)).slice().reverse();
+  const l = rows[i];
+  const reasons = (l.engine_results[0]?.reasons||[]).join('<br>')||'—';
+  const tables = l.tables.length ? l.tables.map(t=>`<span class="ttag">${esc(t)}</span>`).join('') : '<span style="color:#8b949e">none</span>';
+  const dr = document.createElement('tr');
+  dr.className='detail-row';
+  dr.innerHTML=`<td colspan="6"><div class="di">
+    <div style="grid-column:1/-1"><div class="dl">Raw SQL</div><div class="dv raw">${esc(l.raw_sql)}</div></div>
+    <div style="grid-column:1/-1"><div class="dl">Normalized SQL</div><div class="dv norm">${esc(l.normalized_sql)}</div></div>
+    <div><div class="dl">AST fingerprint</div><div class="dv fp">${esc(l.ast_fingerprint)}</div></div>
+    <div><div class="dl">Tables</div>${tables}</div>
+    <div><div class="dl">Reasons</div><div style="font-size:0.78rem;color:#e3b341;line-height:1.6">${reasons}</div></div>
+    <div><div class="dl">Latency &nbsp;/&nbsp; mode</div><div style="font-size:0.78rem;color:#8b949e">${(l.total_latency_ms||0).toFixed(2)} ms &nbsp;&middot;&nbsp; ${esc(l.proxy_mode)}</div></div>
+  </div></td>`;
+  row.after(dr);
+}
+
+function load(){
+  fetch('/api/logs').then(r=>r.json()).then(d=>{
+    _all = d.logs;
+    const blocked = _all.filter(l=>l.final_action==='BLOCKED').length;
+    const allowed = _all.filter(l=>l.final_action==='ALLOWED').length;
+    const off     = _all.filter(l=>l.final_action==='SHIELD_OFF').length;
+    document.getElementById('stats').innerHTML=`
+      <div class="stat s-total" ><div class="n">${_all.length}</div><div class="l">Total</div></div>
+      <div class="stat s-blocked"><div class="n">${blocked}</div><div class="l">Blocked</div></div>
+      <div class="stat s-allowed"><div class="n">${allowed}</div><div class="l">Allowed</div></div>
+      <div class="stat s-off"    ><div class="n">${off}</div><div class="l">Shield off</div></div>`;
+    document.getElementById('ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    render();
+  }).catch(()=>{});
+}
+
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>
