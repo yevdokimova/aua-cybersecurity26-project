@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SQL Shield Demo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- ============================================================= -->
+<!-- TOP NAVIGATION BAR                                             -->
+<!-- ============================================================= -->
+<nav class="topnav">
+  <div class="topnav-brand">
+    <span class="brand-icon">&#9737;</span>
+    SQL Shield
+  </div>
+
+  <!-- Search bar -->
+  <form id="search-form" class="topnav-search" onsubmit="return handleSearch(event)">
+    <input id="search-input" type="text" placeholder="Search products..." autocomplete="off">
+    <button type="submit">Search</button>
+  </form>
+
+  <!-- Navigation links -->
+  <div class="topnav-links">
+    <a href="#" class="nav-link active" onclick="showSection('home', this)">Home</a>
+    <a href="#" class="nav-link" onclick="showSection('login', this)">Login</a>
+    <a href="#" class="nav-link" onclick="showSection('contact', this)">Contact</a>
+  </div>
+
+  <!-- Separator -->
+  <div class="nav-separator"></div>
+
+  <!-- Shield toggle switch -->
+  <div class="shield-toggle-area">
+    <span class="shield-label off" id="shield-label">Shield OFF</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="shield-toggle" onchange="toggleShield()">
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+</nav>
+
+<!-- ============================================================= -->
+<!-- INFO PANELS (query + shield verdict)                           -->
+<!-- These slide in below the nav after a request is made.          -->
+<!-- ============================================================= -->
+<div class="info-panels">
+
+  <!-- SQL query that was built from user input -->
+  <div id="query-display" class="query-display hidden">
+    <div class="query-label">Generated SQL Query:</div>
+    <pre id="query-text" class="query-text"></pre>
+  </div>
+
+  <!-- Shield verdict (only visible when Shield is ON) -->
+  <div id="shield-panel" class="shield-panel hidden">
+    <div class="shield-panel-header" id="shield-panel-header-el">
+      <span class="shield-panel-icon" id="shield-panel-icon"></span>
+      <span class="shield-panel-verdict" id="shield-panel-verdict"></span>
+    </div>
+    <div class="shield-panel-stages" id="shield-panel-stages"></div>
+  </div>
+
+</div>
+
+<!-- ============================================================= -->
+<!-- MAIN CONTENT                                                   -->
+<!-- ============================================================= -->
+<main class="content">
+
+  <!-- =========================================================== -->
+  <!-- HOME PAGE                                                    -->
+  <!-- =========================================================== -->
+  <section id="section-home" class="section active">
+
+    <!-- Welcome card -->
+    <div class="hero-card">
+      <h1>Welcome to SQL Shield Demo</h1>
+      <p>
+        This website is <strong>deliberately vulnerable</strong> to SQL injection.
+        Every input you type is pasted directly into a SQL query
+        <em>without any sanitization</em>.
+      </p>
+      <p>
+        Use the <strong>Shield toggle</strong> in the top-right corner to turn
+        protection on and off. Try the same attack with Shield ON and OFF to
+        see the difference.
+      </p>
+    </div>
+
+    <!-- Injection examples -->
+    <div class="examples-card">
+      <h2>Try These Injections</h2>
+      <div class="examples-grid">
+
+        <div class="example-item">
+          <div class="example-target">Search — tautology</div>
+          <code>' OR '1'='1</code>
+          <div class="example-effect">WHERE becomes always true — returns all rows</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Login — comment bypass</div>
+          <code>admin' --</code>
+          <div class="example-effect">Comments out the password check entirely</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Contact — stacked query</div>
+          <code>x'); DROP TABLE messages; --</code>
+          <div class="example-effect">Injects a second statement to drop a table</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Search — UNION extraction</div>
+          <code>' UNION SELECT id,username,password,role FROM users --</code>
+          <div class="example-effect">Reads credentials from another table</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Search — schema enumeration</div>
+          <code>' UNION SELECT table_name,NULL,NULL,NULL FROM information_schema.tables --</code>
+          <div class="example-effect">Lists all tables in the database</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Login — OR bypass</div>
+          <code>' OR 1=1 --</code>
+          <div class="example-effect">Logs in as the first user without knowing any password</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Chat — time-based blind</div>
+          <code>hello'); SELECT pg_sleep(4); --</code>
+          <div class="example-effect">Causes a 4-second delay — confirms injection without visible output</div>
+        </div>
+
+        <div class="example-item">
+          <div class="example-target">Search — subquery probe</div>
+          <code>' AND (SELECT 'x' FROM users WHERE username='admin')='x' --</code>
+          <div class="example-effect">Boolean blind — silently confirms a user exists</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Search results appear here -->
+    <div id="search-results" class="search-results hidden">
+      <h2>Search Results <span id="result-count" class="result-count"></span></h2>
+      <div id="search-results-list"></div>
+    </div>
+
+  </section>
+
+  <!-- =========================================================== -->
+  <!-- LOGIN PAGE                                                   -->
+  <!-- =========================================================== -->
+  <section id="section-login" class="section">
+    <div class="form-page">
+      <div class="form-card">
+        <h1>Login</h1>
+        <p class="form-subtitle">Sign in to your account</p>
+        <form id="login-form" onsubmit="return handleLogin(event)">
+          <label for="login-user">Username</label>
+          <input id="login-user" type="text" placeholder="Username" autocomplete="off">
+
+          <label for="login-pass">Password</label>
+          <input id="login-pass" type="text" placeholder="Password" autocomplete="off">
+
+          <button type="submit">Log In</button>
+          <p id="login-msg" class="form-msg"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================== -->
+  <!-- CONTACT PAGE                                                 -->
+  <!-- =========================================================== -->
+  <section id="section-contact" class="section">
+    <div class="form-page">
+      <div class="form-card">
+        <h1>Contact Us</h1>
+        <p class="form-subtitle">Send us a message</p>
+        <form id="contact-form" onsubmit="return handleContact(event)">
+          <label for="contact-name">Name</label>
+          <input id="contact-name" type="text" placeholder="Your name" autocomplete="off">
+
+          <label for="contact-email">Email</label>
+          <input id="contact-email" type="text" placeholder="you@example.com" autocomplete="off">
+
+          <label for="contact-msg">Message</label>
+          <textarea id="contact-msg" rows="4" placeholder="How can we help?"></textarea>
+
+          <button type="submit">Send Message</button>
+          <p id="contact-result" class="form-msg"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+
+</main>
+
+<!-- ============================================================= -->
+<!-- CHATBOT WIDGET (floating, bottom-right corner)                 -->
+<!-- ============================================================= -->
+<div id="chat-widget" class="chat-widget collapsed">
+  <div class="chat-header" onclick="toggleChat()">
+    <span>AI Assistant</span>
+    <span id="chat-toggle-icon" class="chat-toggle-icon">+</span>
+  </div>
+  <div class="chat-body" id="chat-body">
+    <div class="chat-messages" id="chat-messages">
+      <div class="chat-msg bot">Hi! How can I help you today?</div>
+    </div>
+    <form class="chat-input-area" onsubmit="return handleChat(event)">
+      <input id="chat-input" type="text" placeholder="Type a message..." autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
