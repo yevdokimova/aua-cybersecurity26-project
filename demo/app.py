@@ -9,7 +9,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import psycopg2
 import psycopg2.extras
 
-from sqlshield import audit, log_server
+from sqlshield import audit
 from sqlshield.parser import Parser
 from sqlshield.engines.signature import SignatureEngine, Rule, Condition, DEFAULT_RULES
 from sqlshield.types import Action
@@ -258,9 +258,6 @@ if __name__ == "__main__":
     init_db()
 
     app_port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 8000
-
-    threading.Thread(target=log_server.run, args=(8080,), daemon=True).start()
-    print(f"Log dashboard → http://localhost:8080")
 
     server = HTTPServer(("", app_port), DemoHandler)
     print(f"Demo app      → http://localhost:{app_port}")

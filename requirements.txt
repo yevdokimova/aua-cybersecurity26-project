@@ -1,2 +1,1 @@
-psycopg2-binary>=2.9
 sqlglot>=25.0
