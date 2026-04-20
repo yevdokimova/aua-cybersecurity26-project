@@ -46,7 +46,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python sqlshield/log_server.py
+    command: python -m sqlshield.log_server
     ports:
       - "8080:8080"
     environment:
