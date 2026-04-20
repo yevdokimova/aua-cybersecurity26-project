@@ -40,6 +40,7 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
 .dv.fp   { color: #d2a8ff; }
 .ttag { background: #1f2d1f; color: #7ee787; border-radius: 3px; padding: 2px 6px; font-size: 0.73rem; display: inline-block; margin: 2px; }
 .empty { text-align: center; color: #8b949e; padding: 60px; }
+.score { font-weight: 600; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -58,7 +59,7 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
 </div>
 <div class="wrap">
   <table>
-    <thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Verdict</th><th>Rules matched</th><th>Tables</th></tr></thead>
+    <thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Verdict</th><th>Score</th><th>Rules matched</th><th>Tables</th></tr></thead>
     <tbody id="tbody"></tbody>
   </table>
 </div>
@@ -66,6 +67,14 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
 let _all = [], _f = 'ALL';
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function scoreColor(s){
+  if (!s || s === 0) return '#8b949e';
+  if (s >= 1.0)  return '#f85149';
+  if (s >= 0.85) return '#f0883e';
+  if (s >= 0.6)  return '#e3b341';
+  return '#8b949e';
+}
 
 function filter(f, btn){
   _f = f;
@@ -83,12 +92,14 @@ function render(){
   document.getElementById('tbody').innerHTML = rows.map((l,i)=>{
     const rules = (l.engine_results[0]?.rule_ids||[]).join(', ')||'—';
     const tables = l.tables.join(', ')||'—';
+    const score  = l.engine_results[0]?.score || 0;
     const t = new Date(l.timestamp*1000).toLocaleTimeString();
     return `<tr class="main" onclick="toggle(this,${i})">
       <td>${esc(t)}</td>
       <td><span class="src">${esc(l.source_tag)}</span></td>
       <td><span class="qt">${esc(l.query_type)}</span></td>
       <td class="v-${esc(l.final_action)}">${esc(l.final_action)}</td>
+      <td class="score" style="color:${scoreColor(score)}">${score ? score.toFixed(2) : '—'}</td>
       <td class="rules" title="${esc(rules)}">${esc(rules)}</td>
       <td style="font-size:0.78rem;color:#8b949e">${esc(tables)}</td>
     </tr>`;
@@ -104,12 +115,14 @@ function toggle(row, i){
   const tables = l.tables.length ? l.tables.map(t=>`<span class="ttag">${esc(t)}</span>`).join('') : '<span style="color:#8b949e">none</span>';
   const dr = document.createElement('tr');
   dr.className='detail-row';
-  dr.innerHTML=`<td colspan="6"><div class="di">
+  const score = l.engine_results[0]?.score || 0;
+  dr.innerHTML=`<td colspan="7"><div class="di">
     <div style="grid-column:1/-1"><div class="dl">Raw SQL</div><div class="dv raw">${esc(l.raw_sql)}</div></div>
     <div style="grid-column:1/-1"><div class="dl">Normalized SQL</div><div class="dv norm">${esc(l.normalized_sql)}</div></div>
     <div><div class="dl">AST fingerprint</div><div class="dv fp">${esc(l.ast_fingerprint)}</div></div>
     <div><div class="dl">Tables</div>${tables}</div>
     <div><div class="dl">Reasons</div><div style="font-size:0.78rem;color:#e3b341;line-height:1.6">${reasons}</div></div>
+    <div><div class="dl">Score</div><div class="score" style="color:${scoreColor(score)}">${score ? score.toFixed(2) : '0.00'} <span style="color:#8b949e;font-weight:400;font-size:0.72rem">${score>=1.0?'critical':score>=0.85?'high':score>=0.6?'medium':score>0?'low':'no match'}</span></div></div>
     <div><div class="dl">Latency &nbsp;/&nbsp; mode</div><div style="font-size:0.78rem;color:#8b949e">${(l.total_latency_ms||0).toFixed(2)} ms &nbsp;&middot;&nbsp; ${esc(l.proxy_mode)}</div></div>
   </div></td>`;
   row.after(dr);
