@@ -41,6 +41,26 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
 .ttag { background: #1f2d1f; color: #7ee787; border-radius: 3px; padding: 2px 6px; font-size: 0.73rem; display: inline-block; margin: 2px; }
 .empty { text-align: center; color: #8b949e; padding: 60px; }
 .score { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid #30363d; }
+.tab  { background: transparent; border: none; color: #8b949e; padding: 10px 18px; cursor: pointer; font-size: 0.85rem; border-bottom: 2px solid transparent; }
+.tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+.s-allow .n { color: #d2a8ff; }
+.allow-btn { background: #1f6feb; border: none; color: #fff; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 0.72rem; margin-left: 6px; }
+.allow-btn:hover { background: #388bfd; }
+.danger-btn { background: #b62324; border: none; color: #fff; padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 0.72rem; }
+.danger-btn:hover { background: #da3633; }
+.engine-line { font-size: 0.75rem; color: #c9d1d9; padding: 4px 0; border-top: 1px dashed #30363d; }
+.engine-line:first-child { border-top: none; }
+.engine-line .en { color: #58a6ff; font-weight: 600; margin-right: 6px; }
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+.modal-bg.show { display: flex; }
+.modal { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px 22px; min-width: 460px; max-width: 640px; }
+.modal h3 { color: #58a6ff; margin-bottom: 12px; font-size: 1rem; }
+.modal label { display: block; font-size: 0.72rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px; }
+.modal input, .modal textarea { width: 100%; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px; padding: 6px 9px; font-size: 0.82rem; font-family: inherit; }
+.modal textarea { resize: vertical; min-height: 60px; }
+.modal .actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal .preview { font-family: monospace; color: #a5d6ff; font-size: 0.78rem; word-break: break-all; padding: 8px 10px; background: #0d1117; border-radius: 4px; border: 1px solid #30363d; }
 </style>
 </head>
 <body>
@@ -49,6 +69,12 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
   <h1>SQL Shield &mdash; Audit Log</h1>
   <span class="ts" id="ts"></span>
 </header>
+<div class="tabs">
+  <button class="tab active" id="tab-logs"      onclick="showTab('logs')">Audit log</button>
+  <button class="tab"        id="tab-allowlist" onclick="showTab('allowlist')">Allowlist</button>
+</div>
+
+<section id="view-logs">
 <div class="stats" id="stats"></div>
 <div class="toolbar">
   <span style="font-size:0.8rem;color:#8b949e">Filter:</span>
@@ -59,12 +85,42 @@ tr.main:hover td { background: #1c2128; cursor: pointer; }
 </div>
 <div class="wrap">
   <table>
-    <thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Verdict</th><th>Score</th><th>Rules matched</th><th>Tables</th></tr></thead>
+    <thead><tr><th>Time</th><th>Source</th><th>Type</th><th>Verdict</th><th>Score</th><th>Rules matched</th><th>Tables</th><th></th></tr></thead>
     <tbody id="tbody"></tbody>
   </table>
 </div>
+</section>
+
+<section id="view-allowlist" style="display:none">
+<div class="wrap" style="padding-top:18px">
+  <table>
+    <thead><tr><th>Fingerprint</th><th>Normalized SQL</th><th>Reason</th><th>Added by</th><th>Added at</th><th></th></tr></thead>
+    <tbody id="alw-body"></tbody>
+  </table>
+</div>
+</section>
+
+<!-- Allow modal -->
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <h3>Allowlist this query</h3>
+    <label>Fingerprint</label>
+    <div class="preview" id="m-fp"></div>
+    <label>Normalized SQL</label>
+    <div class="preview" id="m-norm"></div>
+    <label for="m-by">Added by</label>
+    <input id="m-by" type="text" value="admin">
+    <label for="m-reason">Reason</label>
+    <textarea id="m-reason" placeholder="Why is this a false positive?"></textarea>
+    <div class="actions">
+      <button class="fb" onclick="closeModal()">Cancel</button>
+      <button class="allow-btn" onclick="submitAllow()">Allowlist</button>
+    </div>
+  </div>
+</div>
+
 <script>
-let _all = [], _f = 'ALL';
+let _all = [], _f = 'ALL', _allowlist = [], _allowSet = new Set(), _modalEntry = null;
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -76,6 +132,14 @@ function scoreColor(s){
   return '#8b949e';
 }
 
+function showTab(t){
+  document.getElementById('tab-logs').classList.toggle('active', t==='logs');
+  document.getElementById('tab-allowlist').classList.toggle('active', t==='allowlist');
+  document.getElementById('view-logs').style.display      = t==='logs'      ? '' : 'none';
+  document.getElementById('view-allowlist').style.display = t==='allowlist' ? '' : 'none';
+  if (t==='allowlist') loadAllowlist();
+}
+
 function filter(f, btn){
   _f = f;
   document.querySelectorAll('.fb').forEach(b => b.classList.remove('active'));
@@ -83,17 +147,31 @@ function filter(f, btn){
   render();
 }
 
+function aggregateScore(l){
+  const scores = (l.engine_results||[]).map(e => e.score || 0);
+  return scores.length ? Math.max.apply(null, scores) : 0;
+}
+function aggregateRuleIds(l){
+  const ids = [];
+  for (const e of (l.engine_results||[])) for (const r of (e.rule_ids||[])) ids.push(r);
+  return ids;
+}
+
 function render(){
   const rows = (_f==='ALL' ? _all : _all.filter(l=>l.final_action===_f)).slice().reverse();
   if(!rows.length){
-    document.getElementById('tbody').innerHTML='<tr><td colspan="6" class="empty">No queries logged yet.</td></tr>';
+    document.getElementById('tbody').innerHTML='<tr><td colspan="8" class="empty">No queries logged yet.</td></tr>';
     return;
   }
   document.getElementById('tbody').innerHTML = rows.map((l,i)=>{
-    const rules = (l.engine_results[0]?.rule_ids||[]).join(', ')||'—';
+    const rules = aggregateRuleIds(l).join(', ')||'—';
     const tables = l.tables.join(', ')||'—';
-    const score  = l.engine_results[0]?.score || 0;
+    const score  = aggregateScore(l);
     const t = new Date(l.timestamp*1000).toLocaleTimeString();
+    const allowed = _allowSet.has(l.ast_fingerprint);
+    const action = (l.final_action==='BLOCKED' && !allowed)
+      ? `<button class="allow-btn" onclick="event.stopPropagation();openAllow(${i})">Allow</button>`
+      : (allowed ? '<span class="ttag" style="background:#2d1f3d;color:#d2a8ff">allowlisted</span>' : '');
     return `<tr class="main" onclick="toggle(this,${i})">
       <td>${esc(t)}</td>
       <td><span class="src">${esc(l.source_tag)}</span></td>
@@ -102,6 +180,7 @@ function render(){
       <td class="score" style="color:${scoreColor(score)}">${score ? score.toFixed(2) : '—'}</td>
       <td class="rules" title="${esc(rules)}">${esc(rules)}</td>
       <td style="font-size:0.78rem;color:#8b949e">${esc(tables)}</td>
+      <td>${action}</td>
     </tr>`;
   }).join('');
 }
@@ -111,21 +190,87 @@ function toggle(row, i){
   if(next && next.classList.contains('detail-row')){ next.remove(); return; }
   const rows = (_f==='ALL' ? _all : _all.filter(l=>l.final_action===_f)).slice().reverse();
   const l = rows[i];
-  const reasons = (l.engine_results[0]?.reasons||[]).join('<br>')||'—';
+  const engineLines = (l.engine_results||[]).map(e=>{
+    const reasons = (e.reasons||[]).join('; ') || '—';
+    return `<div class="engine-line"><span class="en">${esc(e.engine)}</span>
+      <span class="v-${e.action==='BLOCK'?'BLOCKED':'ALLOWED'}">${esc(e.action)}</span>
+      <span class="score" style="color:${scoreColor(e.score)};margin-left:6px">${(e.score||0).toFixed(2)}</span>
+      <span style="color:#8b949e;margin-left:8px">${esc(reasons)}</span></div>`;
+  }).join('') || '<div style="color:#8b949e">no engines ran</div>';
   const tables = l.tables.length ? l.tables.map(t=>`<span class="ttag">${esc(t)}</span>`).join('') : '<span style="color:#8b949e">none</span>';
   const dr = document.createElement('tr');
   dr.className='detail-row';
-  const score = l.engine_results[0]?.score || 0;
-  dr.innerHTML=`<td colspan="7"><div class="di">
+  const score = aggregateScore(l);
+  dr.innerHTML=`<td colspan="8"><div class="di">
     <div style="grid-column:1/-1"><div class="dl">Raw SQL</div><div class="dv raw">${esc(l.raw_sql)}</div></div>
     <div style="grid-column:1/-1"><div class="dl">Normalized SQL</div><div class="dv norm">${esc(l.normalized_sql)}</div></div>
     <div><div class="dl">AST fingerprint</div><div class="dv fp">${esc(l.ast_fingerprint)}</div></div>
     <div><div class="dl">Tables</div>${tables}</div>
-    <div><div class="dl">Reasons</div><div style="font-size:0.78rem;color:#e3b341;line-height:1.6">${reasons}</div></div>
-    <div><div class="dl">Score</div><div class="score" style="color:${scoreColor(score)}">${score ? score.toFixed(2) : '0.00'} <span style="color:#8b949e;font-weight:400;font-size:0.72rem">${score>=1.0?'critical':score>=0.85?'high':score>=0.6?'medium':score>0?'low':'no match'}</span></div></div>
+    <div style="grid-column:1/-1"><div class="dl">Engines</div>${engineLines}</div>
+    <div><div class="dl">Aggregate score</div><div class="score" style="color:${scoreColor(score)}">${score ? score.toFixed(2) : '0.00'} <span style="color:#8b949e;font-weight:400;font-size:0.72rem">${score>=1.0?'critical':score>=0.85?'high':score>=0.6?'medium':score>0?'low':'no match'}</span></div></div>
     <div><div class="dl">Latency &nbsp;/&nbsp; mode</div><div style="font-size:0.78rem;color:#8b949e">${(l.total_latency_ms||0).toFixed(2)} ms &nbsp;&middot;&nbsp; ${esc(l.proxy_mode)}</div></div>
   </div></td>`;
   row.after(dr);
+}
+
+// ---- Allowlist UI ---------------------------------------------------------
+
+function openAllow(i){
+  const rows = (_f==='ALL' ? _all : _all.filter(l=>l.final_action===_f)).slice().reverse();
+  const l = rows[i];
+  if (!l || !l.ast_fingerprint) return;
+  _modalEntry = {
+    fingerprint: l.ast_fingerprint,
+    raw_sql_example: l.raw_sql,
+    normalized_sql: l.normalized_sql,
+  };
+  document.getElementById('m-fp').textContent = l.ast_fingerprint;
+  document.getElementById('m-norm').textContent = l.normalized_sql || '(none)';
+  document.getElementById('m-by').value = 'admin';
+  document.getElementById('m-reason').value = '';
+  document.getElementById('modal-bg').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal-bg').classList.remove('show'); _modalEntry = null; }
+function submitAllow(){
+  if (!_modalEntry) return;
+  const payload = Object.assign({}, _modalEntry, {
+    added_by: document.getElementById('m-by').value || 'admin',
+    reason:   document.getElementById('m-reason').value || '',
+  });
+  fetch('/api/allowlist', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  }).then(r => {
+    closeModal();
+    loadAllowlist().then(()=>render());
+  });
+}
+function removeAllow(fp){
+  fetch('/api/allowlist/' + encodeURIComponent(fp), {method:'DELETE'})
+    .then(()=>loadAllowlist().then(()=>render()));
+}
+function loadAllowlist(){
+  return fetch('/api/allowlist').then(r=>r.json()).then(d=>{
+    _allowlist = d.entries || [];
+    _allowSet = new Set(_allowlist.map(e=>e.fingerprint));
+    const tbody = document.getElementById('alw-body');
+    if (!_allowlist.length){
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No allowlisted fingerprints.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = _allowlist.map(e=>{
+      const t = e.added_at ? new Date(e.added_at*1000).toLocaleString() : '—';
+      return `<tr>
+        <td><span class="dv fp">${esc(e.fingerprint)}</span></td>
+        <td style="font-family:monospace;color:#7ee787;font-size:0.78rem">${esc(e.normalized_sql)}</td>
+        <td style="font-size:0.78rem">${esc(e.reason||'—')}</td>
+        <td style="font-size:0.78rem;color:#8b949e">${esc(e.added_by)}</td>
+        <td style="font-size:0.78rem;color:#8b949e">${esc(t)}</td>
+        <td><button class="danger-btn" onclick="removeAllow('${esc(e.fingerprint)}')">Remove</button></td>
+      </tr>`;
+    }).join('');
+  });
 }
 
 function load(){
@@ -134,17 +279,19 @@ function load(){
     const blocked = _all.filter(l=>l.final_action==='BLOCKED').length;
     const allowed = _all.filter(l=>l.final_action==='ALLOWED').length;
     const off     = _all.filter(l=>l.final_action==='SHIELD_OFF').length;
+    const alw     = _allowSet.size;
     document.getElementById('stats').innerHTML=`
       <div class="stat s-total" ><div class="n">${_all.length}</div><div class="l">Total</div></div>
       <div class="stat s-blocked"><div class="n">${blocked}</div><div class="l">Blocked</div></div>
       <div class="stat s-allowed"><div class="n">${allowed}</div><div class="l">Allowed</div></div>
-      <div class="stat s-off"    ><div class="n">${off}</div><div class="l">Shield off</div></div>`;
+      <div class="stat s-off"    ><div class="n">${off}</div><div class="l">Shield off</div></div>
+      <div class="stat s-allow"  ><div class="n">${alw}</div><div class="l">Allowlisted</div></div>`;
     document.getElementById('ts').textContent = 'Updated ' + new Date().toLocaleTimeString();
     render();
   }).catch(()=>{});
 }
 
-load();
+loadAllowlist().then(load);
 setInterval(load, 3000);
 </script>
 </body>

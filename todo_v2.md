@@ -143,19 +143,19 @@ Status of each component and what remains to be done.
 - `sqlshield/types.py` (extend `ParsedQuery`)
 
 **Tasks:**
-- [ ] Add `SessionInfo` dataclass: `user`, `database`, `app_name`, `source_ip`,
+- [x] Add `SessionInfo` dataclass: `user`, `database`, `app_name`, `source_ip`,
   `session_id`, `params: dict`
-- [ ] Add `QueryContext` dataclass: `session`, `source_tag`, `role`
-- [ ] Extend `ParsedQuery` with an optional `context: QueryContext` field
-- [ ] Write `Enricher.enrich(query: ParsedQuery, session: SessionInfo) → ParsedQuery`
-- [ ] Implement source-tag inference from `app_name`:
+- [x] Add `QueryContext` dataclass: `session`, `source_tag`, `role`
+- [x] Extend `ParsedQuery` with an optional `context: QueryContext` field
+- [x] Write `Enricher.enrich(query: ParsedQuery, session: SessionInfo) → ParsedQuery`
+- [x] Implement source-tag inference from `app_name`:
   - `django / rails / sqlalchemy / prisma` → `"orm"`
   - `tableau / metabase / looker / grafana` → `"bi-tool"`
   - `langchain / openai / ai-agent / copilot` → `"ai-agent"`
   - `psql / pgadmin / dbeaver` → `"manual"`
   - Custom header `x-sqlshield-source` overrides inference
-- [ ] Placeholder role inference: `role = session.user` (real lookup deferred)
-- [ ] Write unit tests covering each source-tag branch + unknown → `"unknown"`
+- [x] Placeholder role inference: `role = session.user` (real lookup deferred)
+- [x] Write unit tests covering each source-tag branch + unknown → `"unknown"`
 
 ---
 
@@ -271,7 +271,7 @@ Extract these 8 numeric features from each `ParsedQuery`:
 
 ### Implementation tasks (Option A — statistical baseline)
 
-- [ ] Define `Baseline` dataclass per `(user, role)`:
+- [x] Define `Baseline` dataclass per `(user, role)`:
   - `seen_fingerprints: dict[str, int]`
   - `seen_tables: dict[str, int]`
   - `query_type_dist: dict[str, int]` (SELECT / INSERT / UPDATE / DELETE / DDL)
@@ -279,21 +279,19 @@ Extract these 8 numeric features from each `ParsedQuery`:
   - `literal_stats: (mean, std)`, `join_stats: (mean, std)`
   - `total_queries: int`, `first_seen: datetime`, `last_seen: datetime`
   - `learning: bool`
-- [ ] Implement `AnomalyEngine(BaseEngine)`:
-  - Learning period: configurable (default 100 queries for demo, 7 days for prod)
-  - During learning: absorb query into baseline, always return `ALLOW`
-  - After learning: score query across 5 dimensions using z-score
-- [ ] Implement 5 scoring dimensions:
+- [x] Implement `AnomalyEngine(BaseEngine)` (default 100 queries learning,
+  always-allow during learning, z-score scoring after)
+- [x] Implement 5 scoring dimensions:
   1. Novel fingerprint — AST shape never seen from this user (score 1.0)
   2. Novel table — user never accessed this table (score 0.8)
   3. First mutation — user was read-only, now doing INSERT/UPDATE/DELETE/DDL (score 0.9)
   4. Complexity spike — `z_score(literal_count) > 3` or `z_score(join_depth) > 3` (score proportional to z)
   5. Temporal anomaly — query hour has zero count in `active_hours` (score 0.6)
-- [ ] Weighted aggregation: `final_score = max(dimension_scores)` (same as signature engine)
-- [ ] Threshold: `final_score >= 0.7` → BLOCK
-- [ ] Persist baselines to JSON file (`baselines.json` next to audit log)
-- [ ] Expose `reset_baseline(user)` and `export_baselines()` methods
-- [ ] Write tests: learning phase always allows, post-learning flags each anomaly dimension
+- [x] Weighted aggregation: `final_score = max(dimension_scores)`
+- [x] Threshold: `final_score >= 0.7` → BLOCK
+- [x] Persist baselines to JSON file (`baselines.json` next to audit log)
+- [x] Expose `reset_baseline(user)` and `export_baselines()` methods
+- [x] Write tests: learning phase always allows, post-learning flags each anomaly dimension
 
 ---
 
@@ -342,20 +340,20 @@ Extract these 8 numeric features from each `ParsedQuery`:
 - `sqlshield/pipeline.py` (wire aggregator in)
 
 **Tasks:**
-- [ ] Implement `Aggregator.evaluate(query: ParsedQuery) → FinalVerdict`
+- [x] Implement `Aggregator.evaluate(query: ParsedQuery) → FinalVerdict`
   - Run engines via `ThreadPoolExecutor` (parallel)
   - Wrap each engine in `try/except` so one broken engine can't crash the pipeline
   - ANY engine BLOCK → final BLOCK; otherwise ALLOW
-- [ ] Add `FinalVerdict` dataclass: `action`, `engine_verdicts`, `aggregate_score`,
+- [x] Add `FinalVerdict` dataclass: `action`, `engine_verdicts`, `aggregate_score`,
   `latency_ms`
-- [ ] Implement three operating modes (from config):
+- [x] Implement three operating modes (from config):
   - `enforce` — respect engine verdicts
   - `monitor` — always ALLOW but log what would have blocked
   - `learning` — always ALLOW (anomaly baseline building)
-- [ ] Update `pipeline.py` to call `Aggregator` instead of calling signature engine
-  directly
-- [ ] Update audit log schema to include `engine_verdicts` and `mode`
-- [ ] Write tests for each mode and for engine-failure isolation
+- [x] Wire the aggregator into `demo/app.py` (no separate `pipeline.py`; the demo
+  is the only consumer in this scope)
+- [x] Update audit log to record one entry per engine verdict
+- [x] Write tests for each mode and for engine-failure isolation
 
 ---
 
@@ -441,14 +439,14 @@ is always empty. This phase makes it a live, persisted, API-managed set.
 
 ### Allowlist store (`sqlshield/allowlist.py`)
 
-- [ ] `AllowlistEntry` dataclass:
+- [x] `AllowlistEntry` dataclass:
   - `fingerprint: str` — 16-char SHA-256 prefix (matches `ast_fingerprint`)
   - `raw_sql_example: str` — one representative query that produced this fingerprint
   - `normalized_sql: str` — the canonical form (easier to read than the fingerprint)
   - `added_at: float` — Unix timestamp
   - `added_by: str` — operator identifier (free text, e.g. `"admin"`)
   - `reason: str` — free-text note explaining why this is a false positive
-- [ ] `AllowlistStore` class:
+- [x] `AllowlistStore` class:
   - Persists to `allowlist.json` next to `audit.jsonl` (path from `ALLOWLIST`
     env var, same default directory as `AUDIT_LOG`)
   - `add(entry: AllowlistEntry) → None` — append and flush to disk
@@ -456,37 +454,31 @@ is always empty. This phase makes it a live, persisted, API-managed set.
   - `contains(fingerprint: str) → bool` — O(1) lookup via in-memory set
   - `list_all() → list[AllowlistEntry]` — return all entries sorted by `added_at`
   - Thread-safe reads/writes via `threading.Lock`
-  - Load from disk on startup; hot-reload when file changes (optional)
-- [ ] Wire `AllowlistStore` into `SignatureEngine`:
-  - Pass `store.contains` as the bypass check instead of a static set
-  - Engine re-checks on every query so additions take effect immediately,
-    no restart needed
+  - Loads from disk on startup
+- [x] Wire `AllowlistStore` into `SignatureEngine` via `bypass_fingerprints=store`
+  (engine re-checks on every query so additions take effect immediately,
+  no restart needed)
 
 ### Admin API endpoints (extend `sqlshield/log_server.py`)
 
-- [ ] `GET /api/allowlist` — return all entries as JSON array
-- [ ] `POST /api/allowlist` — add an entry; body:
+- [x] `GET /api/allowlist` — return all entries as JSON array
+- [x] `POST /api/allowlist` — add an entry; body:
   ```json
   { "fingerprint": "abc123...", "raw_sql_example": "...",
     "normalized_sql": "...", "added_by": "admin", "reason": "false positive on OR in WHERE" }
   ```
   Returns `201` with the created entry, or `409` if fingerprint already exists
-- [ ] `DELETE /api/allowlist/<fingerprint>` — remove entry; returns `204` or `404`
-- [ ] `GET /api/allowlist/<fingerprint>` — get one entry by fingerprint
+- [x] `DELETE /api/allowlist/<fingerprint>` — remove entry; returns `204` or `404`
+- [x] `GET /api/allowlist/<fingerprint>` — get one entry by fingerprint
 
 ### Dashboard UI (extend `sqlshield/static/logs.html`)
 
-- [ ] Add **"Allow"** button on every BLOCKED row in the audit table:
-  - Clicking prefills a modal with `fingerprint`, `raw_sql`, `normalized_sql`
-    (all read from the audit record — no typing required)
-  - Modal has a `reason` text field and an `added_by` field (default `"admin"`)
-  - Confirm → `POST /api/allowlist` → row updates to show a `✓ allowlisted` badge
-- [ ] Add **Allowlist tab** alongside the existing log table:
-  - Table columns: fingerprint (truncated), normalized SQL, reason, added by, date
-  - Each row has a **Remove** button → `DELETE /api/allowlist/<fingerprint>`
-    → row removed from table immediately
-- [ ] Show a distinct badge/style in the audit log for queries whose fingerprint
-  is in the allowlist (so you can see that a previously-blocked query is now passing)
+- [x] Add **"Allow"** button on every BLOCKED row in the audit table; modal
+  prefilled with the fingerprint, raw SQL, and normalized SQL.
+- [x] Add **Allowlist tab** alongside the audit log table with a per-row
+  **Remove** button.
+- [x] Show an `allowlisted` badge in the audit log for queries whose
+  fingerprint is currently in the allowlist.
 
 ### Behaviour after allowlisting
 
@@ -498,6 +490,14 @@ query arrives → fingerprint in allowlist?
                     no  → normal engine pipeline
 ```
 
-- [ ] Add `"allowlisted"` as a distinct `proxy_mode` value in `AuditRecord`
-  so the dashboard can filter/count allowlisted queries separately
-- [ ] Add an **Allowlisted** summary stat card to the dashboard header
+- [x] The signature engine reports `rule_ids=["ALLOWLIST"]` so the dashboard
+  can spot allowlisted queries without a schema change
+- [x] Add an **Allowlisted** summary stat card to the dashboard header
+
+
+## Out of scope for the course project
+
+Phase 2C (LLM policy engine) and Phase 2E (Postgres wire-protocol proxy + admin
+API) were intentionally deferred. They are well-defined and can be added later
+without changing the existing engine or aggregator interfaces, but they were
+too large to land cleanly within the course timeline.

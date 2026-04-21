@@ -3,16 +3,19 @@ import json
 import os
 import sys
 import time
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import psycopg2
 import psycopg2.extras
 
 from sqlshield import audit
-from sqlshield.parser import Parser
+from sqlshield.allowlist import default_store as allowlist_store
+from sqlshield.engines.anomaly import AnomalyEngine
 from sqlshield.engines.signature import SignatureEngine, Rule, Condition, DEFAULT_RULES
-from sqlshield.types import Action
+from sqlshield.enricher import Enricher
+from sqlshield.parser import Parser
+from sqlshield.types import Action, SessionInfo
+from sqlshield.verdict import Aggregator
 
 # ── Shield ────────────────────────────────────────────────────────────────────
 
@@ -26,22 +29,58 @@ RULES = DEFAULT_RULES + [
     ),
 ]
 
-_parser = Parser()
-_engine = SignatureEngine(rules=RULES, strictness="medium")
+_parser     = Parser()
+_enricher   = Enricher()
+_signature  = SignatureEngine(
+    rules=RULES,
+    strictness="medium",
+    bypass_fingerprints=allowlist_store,   # live, persisted allowlist
+)
+_anomaly    = AnomalyEngine(
+    learning_queries=int(os.environ.get("ANOMALY_LEARNING_QUERIES", 30)),
+)
+_aggregator = Aggregator(engines=[_signature, _anomaly], mode="enforce")
 SHIELD_ENABLED = False
 
 
-def run_shield(sql):
+def run_shield(sql, source, source_ip=""):
+    """
+    Parse, enrich, and (when enabled) run the verdict aggregator.
+
+    Returns ``(blocked, shield_dict, parsed_query, engine_verdicts)`` where
+    ``engine_verdicts`` is a list so the audit log can record one entry
+    per engine.
+    """
     pq = _parser.parse(sql)
+    session = SessionInfo(
+        user="demo",
+        database="demo",
+        app_name=f"sqlshield-demo/{source}",
+        source_ip=source_ip,
+        session_id="demo-session",
+    )
+    _enricher.enrich(pq, session)
+
     if not SHIELD_ENABLED:
-        return False, None, pq, None
-    v = _engine.inspect(pq)
-    verdict = "rejected" if v.action == Action.BLOCK else ("suspicious" if v.score > 0 else "accepted")
-    detail = "; ".join(v.reasons) if v.reasons else "no issues detected"
-    return v.action == Action.BLOCK, {
-        "verdict": verdict,
-        "stages": [{"stage": "signature", "verdict": verdict, "detail": detail}],
-    }, pq, v
+        return False, None, pq, []
+
+    final = _aggregator.evaluate(pq)
+    blocked = final.action == Action.BLOCK
+    overall = "rejected" if blocked else ("suspicious" if final.aggregate_score > 0 else "accepted")
+    stages = []
+    for v in final.engine_verdicts:
+        stage_verdict = (
+            "rejected"   if v.action == Action.BLOCK
+            else "suspicious" if v.score > 0
+            else "accepted"
+        )
+        stages.append({
+            "stage":   v.engine,
+            "verdict": stage_verdict,
+            "detail":  "; ".join(v.reasons) if v.reasons else "no issues detected",
+            "score":   v.score,
+        })
+    return blocked, {"verdict": overall, "stages": stages}, pq, final.engine_verdicts
 
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -57,9 +96,14 @@ def get_db():
 
 
 def execute_query(sql, fetch=True):
+    # Demo-only safety net: a stacked DROP is the canonical "delete the
+    # whole table" demo; if it actually executed (e.g. when the shield
+    # is OFF) it would destroy the seed data and break the rest of the
+    # walkthrough. We short-circuit it and report it to the caller so
+    # the audit log and UI can show the attack was attempted.
     pq = _parser.parse(sql)
     if pq.has_stacked and "DROP" in sql.upper():
-        return [], None, True
+        return [], "demo safety net: stacked DROP simulated, not executed", True
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -176,7 +220,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             "/api/contact":       self._contact,
             "/api/chat":          self._chat,
             "/api/shield/toggle": self._toggle,
-            "/api/shield/reset":  lambda d: self._json({"reset": True}),
+            "/api/shield/reset":  self._reset,
         }
         fn = routes.get(self.path)
         if fn: fn(data)
@@ -187,10 +231,17 @@ class DemoHandler(BaseHTTPRequestHandler):
         SHIELD_ENABLED = data.get("enabled", False)
         self._json({"shield_enabled": SHIELD_ENABLED})
 
+    def _reset(self, data):
+        # Drops the anomaly baseline for the demo user so the next 30
+        # queries are absorbed as a fresh learning window. Useful when
+        # demoing the anomaly engine repeatedly.
+        removed = _anomaly.reset_baseline("demo")
+        self._json({"reset": True, "anomaly_baseline_cleared": removed})
+
     def _search(self, data):
         sql = build_search(data.get("query", ""))
-        blocked, shield, pq, ev = run_shield(sql)
-        audit.write("search", sql, pq, ev, blocked, SHIELD_ENABLED)
+        blocked, shield, pq, evs = run_shield(sql, "search", self._client_ip())
+        audit.write("search",  sql, pq, blocked, SHIELD_ENABLED, engine_verdicts=evs)
         if blocked:
             self._json({"blocked": True, "shield": shield, "query": sql, "results": [], "result_count": 0}); return
         rows, _, _ = execute_query(sql)
@@ -198,8 +249,8 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def _login(self, data):
         sql = build_login(data.get("username", ""), data.get("password", ""))
-        blocked, shield, pq, ev = run_shield(sql)
-        audit.write("login", sql, pq, ev, blocked, SHIELD_ENABLED)
+        blocked, shield, pq, evs = run_shield(sql, "login", self._client_ip())
+        audit.write("login",   sql, pq, blocked, SHIELD_ENABLED, engine_verdicts=evs)
         if blocked:
             self._json({"blocked": True, "shield": shield, "query": sql, "success": False, "message": "Blocked by Shield."}); return
         rows, _, _ = execute_query(sql)
@@ -212,8 +263,8 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def _contact(self, data):
         sql = build_contact(data.get("name", ""), data.get("email", ""), data.get("message", ""))
-        blocked, shield, pq, ev = run_shield(sql)
-        audit.write("contact", sql, pq, ev, blocked, SHIELD_ENABLED)
+        blocked, shield, pq, evs = run_shield(sql, "contact", self._client_ip())
+        audit.write("contact", sql, pq, blocked, SHIELD_ENABLED, engine_verdicts=evs)
         if blocked:
             self._json({"blocked": True, "shield": shield, "query": sql, "success": False, "message": "Blocked by Shield."}); return
         _, err, dropped = execute_query(sql, fetch=False)
@@ -223,8 +274,8 @@ class DemoHandler(BaseHTTPRequestHandler):
     def _chat(self, data):
         msg = data.get("message", "")
         sql = build_chat(msg)
-        blocked, shield, pq, ev = run_shield(sql)
-        audit.write("chat", sql, pq, ev, blocked, SHIELD_ENABLED)
+        blocked, shield, pq, evs = run_shield(sql, "chat", self._client_ip())
+        audit.write("chat",    sql, pq, blocked, SHIELD_ENABLED, engine_verdicts=evs)
         if blocked:
             self._json({"blocked": True, "shield": shield, "query": sql, "reply": "Blocked by Shield."}); return
         execute_query(sql, fetch=False)
@@ -237,6 +288,12 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
+
+    def _client_ip(self):
+        try:
+            return self.client_address[0]
+        except Exception:
+            return ""
 
     def log_message(self, *_):
         pass
