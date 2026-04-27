@@ -374,7 +374,11 @@ class SignatureEngine(BaseEngine):
         strictness: str = "medium",
     ) -> None:
         self.rules = rules if rules is not None else DEFAULT_RULES
-        self.bypass = bypass_fingerprints or set()
+        # ``bypass`` may be either a static set or any object exposing a
+        # ``contains(fingerprint) -> bool`` method (e.g. an
+        # ``AllowlistStore``). The latter lets the operator add entries
+        # at runtime without restarting the engine.
+        self.bypass = bypass_fingerprints if bypass_fingerprints is not None else set()
         self.strictness = strictness
         # Pre-compute the blocking severity set for this engine instance.
         self._block_severities = _BLOCK_SEVERITIES.get(
@@ -406,13 +410,13 @@ class SignatureEngine(BaseEngine):
         t0 = time.perf_counter()
 
         # Step 1 — bypass fast path
-        if query.ast_fingerprint in self.bypass:
+        if self._is_bypassed(query.ast_fingerprint):
             return EngineVerdict(
                 engine=self.name,
                 action=Action.ALLOW,
                 score=0.0,
-                reasons=[],
-                rule_ids=[],
+                reasons=["allowlisted"],
+                rule_ids=["ALLOWLIST"],
                 latency_ms=0.0,
             )
 
@@ -453,6 +457,21 @@ class SignatureEngine(BaseEngine):
             rule_ids=rule_ids,
             latency_ms=latency_ms,
         )
+
+    # ------------------------------------------------------------------
+    # Allowlist helper — supports both a plain set and an AllowlistStore.
+    # ------------------------------------------------------------------
+
+    def _is_bypassed(self, fingerprint: str) -> bool:
+        if not fingerprint:
+            return False
+        contains = getattr(self.bypass, "contains", None)
+        if callable(contains):
+            return bool(contains(fingerprint))
+        try:
+            return fingerprint in self.bypass
+        except TypeError:
+            return False
 
     # ------------------------------------------------------------------
     # Rule / condition matching
