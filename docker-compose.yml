@@ -1,8 +1,6 @@
 services:
   db:
     image: postgres:16
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_DB: demo
       POSTGRES_USER: demo
@@ -30,12 +28,35 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
+      PROXY_HOST: proxy
+      PROXY_PORT: ${PROXY_PORT:-6432}
       DB_NAME: demo
       DB_USER: demo
       DB_PASS: demo
+      ADMIN_HOST: proxy
+      ADMIN_PORT: ${ADMIN_PORT:-9090}
+    volumes:
+      - logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m sqlshield
+    ports:
+      - "${PROXY_PORT:-6432}:${PROXY_PORT:-6432}"
+      - "${ADMIN_PORT:-9090}:${ADMIN_PORT:-9090}"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      PROXY_PORT: ${PROXY_PORT:-6432}
+      ADMIN_PORT: ${ADMIN_PORT:-9090}
       AUDIT_LOG: /app/logs/audit.jsonl
+      SHIELD_MODE: enforce
+      ANOMALY_LEARNING_QUERIES: 100
     volumes:
       - logs:/app/logs
     depends_on:

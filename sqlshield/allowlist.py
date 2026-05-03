@@ -1,16 +1,3 @@
-"""
-Phase 2F — Persistent fingerprint allowlist.
-
-An operator-managed list of AST fingerprints that should bypass the
-signature engine entirely. Persists to ``allowlist.json`` next to the
-audit log; reads/writes are guarded by a single lock so the dashboard
-server and the engine can share the same store safely.
-
-The signature engine already supports a fingerprint allowlist via its
-``bypass_fingerprints`` parameter; this module wraps that mechanism in a
-live, persisted, API-managed store with metadata for each entry.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,8 +19,6 @@ class AllowlistEntry:
 
 
 class AllowlistStore:
-    """Thread-safe, JSON-backed allowlist."""
-
     def __init__(self, path: Optional[str] = None) -> None:
         self.path = path or os.environ.get(
             "ALLOWLIST",
@@ -43,10 +28,6 @@ class AllowlistStore:
         self._lock = threading.Lock()
         self._entries: dict[str, AllowlistEntry] = {}
         self._load()
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def contains(self, fingerprint: str) -> bool:
         with self._lock:
@@ -80,10 +61,6 @@ class AllowlistStore:
         with self._lock:
             return sorted(self._entries.values(), key=lambda e: e.added_at)
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
     def _load(self) -> None:
         if not os.path.exists(self.path):
             return
@@ -109,5 +86,4 @@ class AllowlistStore:
             pass
 
 
-# Process-wide default store, shared by the engine and the dashboard.
 default_store = AllowlistStore()
