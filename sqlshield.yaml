@@ -1,0 +1,7 @@
+proxy:
+  listen_port: 6432
+  backend_host: localhost
+  backend_port: 5432
+
+admin:
+  port: 9090

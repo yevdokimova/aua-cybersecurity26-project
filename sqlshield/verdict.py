@@ -1,18 +1,3 @@
-"""
-Phase 2D — Verdict aggregator.
-
-Runs every registered engine over a parsed query and merges the results
-into a single ``FinalVerdict``. Engines run in parallel when there is more
-than one, but exceptions in any engine are isolated so a broken engine
-can never take the pipeline down.
-
-Three operating modes
----------------------
-- ``enforce``   — engine verdicts decide. Any BLOCK → BLOCK.
-- ``monitor``   — always ALLOW; engine verdicts are still recorded.
-- ``learning``  — always ALLOW; intended for the anomaly baseline phase.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -44,22 +29,12 @@ class Aggregator:
         self.engines = list(engines)
         self.mode    = mode
 
-    # ------------------------------------------------------------------
-
     def evaluate(self, query: ParsedQuery) -> FinalVerdict:
         t0 = time.perf_counter()
         verdicts = self._run_engines(query)
-
-        # Aggregate score = max of all engine scores (matches signature
-        # engine's own aggregation, so the value is comparable).
         aggregate = max((v.score for v in verdicts), default=0.0)
-
         any_block = any(v.action == Action.BLOCK for v in verdicts)
-        if self.mode == "enforce" and any_block:
-            action = Action.BLOCK
-        else:
-            action = Action.ALLOW
-
+        action = Action.BLOCK if self.mode == "enforce" and any_block else Action.ALLOW
         return FinalVerdict(
             action=action,
             engine_verdicts=verdicts,
@@ -67,8 +42,6 @@ class Aggregator:
             latency_ms=(time.perf_counter() - t0) * 1000.0,
             mode=self.mode,
         )
-
-    # ------------------------------------------------------------------
 
     def _run_engines(self, query: ParsedQuery) -> list[EngineVerdict]:
         if not self.engines:
@@ -83,7 +56,7 @@ class Aggregator:
     def _safe_inspect(engine: BaseEngine, query: ParsedQuery) -> EngineVerdict:
         try:
             return engine.inspect(query)
-        except Exception as exc:  # noqa: BLE001 — engine isolation
+        except Exception as exc:
             logger.exception("engine %s crashed: %s", engine.name, exc)
             return EngineVerdict(
                 engine=getattr(engine, "name", "unknown"),

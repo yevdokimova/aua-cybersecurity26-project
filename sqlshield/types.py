@@ -68,24 +68,18 @@ class AuditRecord:
     proxy_mode: str
 
 
-# ---------------------------------------------------------------------------
-# Session / context — Phase 2A
-# ---------------------------------------------------------------------------
-
 @dataclass
 class SessionInfo:
-    """Per-connection metadata that travels with every query."""
-    user: str                  = "anonymous"
-    database: str              = ""
-    app_name: str              = ""
-    source_ip: str             = ""
-    session_id: str            = ""
-    params: dict               = field(default_factory=dict)
+    user: str       = "anonymous"
+    database: str   = ""
+    app_name: str   = ""
+    source_ip: str  = ""
+    session_id: str = ""
+    params: dict    = field(default_factory=dict)
 
 
 @dataclass
 class QueryContext:
-    """Per-query enriched context: who is asking and from what kind of caller."""
-    session: SessionInfo       = field(default_factory=SessionInfo)
-    source_tag: str            = "unknown"
-    role: str                  = "anonymous"
+    session: SessionInfo = field(default_factory=SessionInfo)
+    source_tag: str      = "unknown"
+    role: str            = "anonymous"

@@ -14,5 +14,3 @@ class BaseEngine(ABC):
     @abstractmethod
     def inspect(self, query: ParsedQuery) -> EngineVerdict: ...
 
-    def healthy(self) -> bool:
-        return True

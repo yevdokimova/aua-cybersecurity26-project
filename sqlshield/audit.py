@@ -1,11 +1,3 @@
-"""
-Append-only JSONL audit log.
-
-Every query that reaches the demo app produces exactly one record here,
-regardless of whether the shield blocked it. The dashboard reads this
-file with :func:`read_all`.
-"""
-
 import json
 import os
 import threading
@@ -24,29 +16,6 @@ _lock = threading.Lock()
 
 def write(source, sql, parsed_query, blocked, shield_enabled,
           engine_verdict=None, engine_verdicts=None, proxy_mode=None):
-    """
-    Append one audit record to the JSONL log.
-
-    Parameters
-    ----------
-    source : str
-        The application surface that produced the query (e.g. "search",
-        "login"). Used as a fallback ``source_tag`` when the parsed query
-        has no enriched ``QueryContext``.
-    sql, parsed_query : as before.
-    blocked : bool
-        Whether the pipeline blocked the query.
-    shield_enabled : bool
-        Whether the shield was active when this query ran.
-    engine_verdict : EngineVerdict | None
-        Convenience for single-engine pipelines. Equivalent to passing
-        ``engine_verdicts=[engine_verdict]``.
-    engine_verdicts : list[EngineVerdict] | None
-        Full list of per-engine verdicts (e.g. from the aggregator).
-    proxy_mode : str | None
-        Override the recorded mode (e.g. ``"allowlisted"``). Defaults to
-        ``"enforce"`` / ``"monitor"`` based on ``shield_enabled``.
-    """
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
     ctx = getattr(parsed_query, "context", None)

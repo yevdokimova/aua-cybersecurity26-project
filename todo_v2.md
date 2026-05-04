@@ -371,13 +371,13 @@ by changing only its connection string (`port 5432` → `port 6432`).
 - `sqlshield.yaml` (add proxy config section)
 
 **Tasks:**
-- [ ] Implement `PostgresProxy` as an `asyncio` TCP server on port 6432
-- [ ] Handle PostgreSQL wire protocol v3 startup:
+- [x] Implement `PostgresProxy` as an `asyncio` TCP server on port 6432
+- [x] Handle PostgreSQL wire protocol v3 startup:
   - Parse 4-byte length + 4-byte protocol version + null-terminated key=value pairs
   - Extract `user`, `database`, `application_name` → build `SessionInfo`
   - Forward startup to real backend (port 5432), relay auth exchange
   - Wait for `ReadyForQuery` (`Z` / `0x5A`) before entering query loop
-- [ ] Implement query interception loop:
+- [x] Implement query interception loop:
   - Simple Query (`Q` / `0x51`): extract null-terminated SQL string
   - Extended Query Parse (`P` / `0x50`): skip statement name, read query string
   - For each query:
@@ -387,25 +387,25 @@ by changing only its connection string (`port 5432` → `port 6432`).
     - ALLOW → forward to backend, relay response until next `ReadyForQuery`
   - Terminate (`X` / `0x58`): forward, close both connections
   - All other messages: passthrough (Bind, Execute, Describe, Sync, etc.)
-- [ ] Add `sqlshield.yaml` proxy section:
+- [x] Add `sqlshield.yaml` proxy section:
   ```yaml
   proxy:
     listen_port: 6432
     backend_host: localhost
     backend_port: 5432
   ```
-- [ ] Implement admin HTTP API (`aiohttp`, port 9090):
+- [x] Implement admin HTTP API (`aiohttp`, port 9090):
   - `GET /health`
   - `GET /api/v1/stats` — total queries, blocked, allowed, latency percentiles
   - `GET /api/v1/baselines` — export anomaly baselines
   - `POST /api/v1/baselines/reset` — reset a user's baseline
-- [ ] Implement `sqlshield/__main__.py` CLI entry point:
+- [x] Implement `sqlshield/__main__.py` CLI entry point:
   - `python -m sqlshield` starts proxy + admin API
-- [ ] Update `docker-compose.yml`:
+- [x] Update `docker-compose.yml`:
   - Replace direct psycopg2 demo connection with proxy connection on port 6432
   - Remove `run_shield()` call from `demo/app.py`
   - Add proxy service, expose ports 6432 and 9090
-- [ ] Write integration tests: connect a real psycopg2 client to the proxy,
+- [x] Write integration tests: connect a real psycopg2 client to the proxy,
   verify injections are blocked and normal queries pass through
 
 ---
