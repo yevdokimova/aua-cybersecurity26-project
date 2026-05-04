@@ -35,6 +35,7 @@ function showSection(name, clickedLink) {
 // ==================================================================
 
 function showQueryDisplay(queryString) {
+  if (!queryString) return;
   var container = document.getElementById('query-display');
   var text      = document.getElementById('query-text');
   text.textContent = queryString;
@@ -293,11 +294,11 @@ function handleChat(event) {
       appendChatMessage('blocked', 'SHIELD BLOCKED: ' + data.shield.verdict);
       appendChatMessage('bot', data.reply);
     } else {
-      appendChatMessage('query', 'SQL: ' + data.query);
+      if (data.query) appendChatMessage('query', 'SQL: ' + data.query);
       appendChatMessage('bot', data.reply);
     }
 
-    showQueryDisplay(data.query);
+    if (data.query) showQueryDisplay(data.query);
     showShieldPanel(data.shield);
   });
 

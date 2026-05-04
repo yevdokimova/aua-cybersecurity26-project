@@ -14,40 +14,73 @@ LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "60"))
 
 SCHEMA_DOC = """\
 Tables (PostgreSQL):
-
-  users(id, username, password, role)
-      -- SENSITIVE. Never SELECT password. Never query without a WHERE.
   products(id, name, price, description)
   messages(id, name, email, message, sent_at)
   chat_logs(id, user_message, created_at)
+  users(id, username, password, role)  -- SENSITIVE: never SELECT password, never query without WHERE
 """
 
-SYSTEM_PROMPT = (
-    "You are a read-only SQL assistant for a small PostgreSQL demo store.\n"
-    "Reply with ONE single SQL statement, nothing else.\n"
-    "Wrap the SQL in a ```sql fenced code block.\n"
-    "Rules you MUST follow:\n"
+_SQL_SYSTEM = (
+    "You are a SQL generator for a PostgreSQL demo store.\n"
+    "Reply with ONLY a single SELECT query inside a ```sql block. No other text.\n"
+    "Rules:\n"
     "  - SELECT only. No INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, GRANT.\n"
-    "  - Always include a LIMIT clause (max 50 rows).\n"
-    "  - Never query the `users` table without a WHERE clause.\n"
-    "  - Never SELECT the `password` column.\n"
-    "  - Use only the tables and columns described in the schema.\n"
-    "  - No UNION, no stacked statements, no comments.\n"
+    "  - Always include LIMIT (max 50 rows).\n"
+    "  - Never query the users table without a WHERE clause.\n"
+    "  - Never SELECT the password column.\n"
+    "  - Use only the tables listed in the schema.\n"
+    "  - No UNION, no stacked statements, no SQL comments.\n"
+    "  - Use ILIKE instead of LIKE for case-insensitive text searches.\n"
     f"\nSchema:\n{SCHEMA_DOC}"
 )
 
+_CHAT_SYSTEM = (
+    "You are a friendly assistant for a demo online store. "
+    "Reply conversationally in 1-3 sentences. "
+    "Never generate SQL or use code blocks."
+)
 
-def generate_sql(user_message: str) -> tuple[str, str]:
-    prompt = (
-        "User question: " + user_message.strip() + "\n\n"
-        "Write the SQL query that answers it."
-    )
+# Patterns that are clearly conversational — everything else goes to SQL mode
+_CHAT_RE = re.compile(
+    r"^\s*(hi+|hey+|hello|howdy|greetings|good\s+(morning|afternoon|evening)|"
+    r"how are you|how's it going|what's up|thank(s| you)|bye|goodbye|"
+    r"what can you do|help me|who are you)\W*$",
+    re.IGNORECASE,
+)
+
+
+def generate_response(user_message: str) -> tuple[str | None, str, str]:
+    """Return (sql_or_none, text_reply, raw_llm_output).
+
+    sql_or_none is set when the message is a data query;
+    text_reply carries the conversational response otherwise.
+    """
+    if _CHAT_RE.match(user_message):
+        return _chat_response(user_message)
+    return _sql_response(user_message)
+
+
+def _sql_response(user_message: str) -> tuple[str | None, str, str]:
+    raw = _call_llm(_SQL_SYSTEM, "Query: " + user_message.strip())
+    sql = _extract_sql(raw)
+    if sql:
+        return sql, "", raw
+    # Model returned text instead of SQL — fall back to conversational reply
+    return None, raw or "I couldn't generate a query for that.", raw
+
+
+def _chat_response(user_message: str) -> tuple[str | None, str, str]:
+    raw = _call_llm(_CHAT_SYSTEM, user_message.strip())
+    return None, raw or "I'm not sure how to answer that.", raw
+
+
+def _call_llm(system: str, prompt: str) -> str:
     body = json.dumps({
-        "model":  LLM_MODEL,
-        "system": SYSTEM_PROMPT,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 256},
+        "model":   LLM_MODEL,
+        "system":  system,
+        "prompt":  prompt,
+        "stream":  False,
+        "options": {"temperature": 0.3, "num_predict": 300},
     }).encode("utf-8")
 
     req = urllib.request.Request(
@@ -59,21 +92,19 @@ def generate_sql(user_message: str) -> tuple[str, str]:
     try:
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as resp:
             payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+        return payload.get("response", "").strip()
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return ("SELECT 1",
-                f"[LLM unavailable: {exc}. Returning a no-op query.]")
-
-    raw = payload.get("response", "").strip()
-    sql = _extract_sql(raw)
-    return sql, raw
+        return f"I'm having trouble reaching my backend right now ({exc}). Please try again."
 
 
 _FENCE_RE = re.compile(r"```(?:sql)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 
 
-def _extract_sql(text: str) -> str:
+def _extract_sql(text: str) -> str | None:
     m = _FENCE_RE.search(text)
-    candidate = (m.group(1) if m else text).strip()
+    if not m:
+        return None
+    candidate = m.group(1).strip()
     while candidate.endswith(";"):
         candidate = candidate[:-1].rstrip()
-    return candidate or "SELECT 1"
+    return candidate or None
