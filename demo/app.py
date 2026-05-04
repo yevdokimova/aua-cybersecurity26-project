@@ -10,6 +10,7 @@ import psycopg2
 import psycopg2.extras
 
 from sqlshield.parser import Parser
+from demo import llm as llm_client
 
 SHIELD_ENABLED = False
 _parser = Parser()
@@ -29,6 +30,18 @@ def get_db():
         dbname=os.environ.get("DB_NAME", "demo"),
         user=os.environ.get("DB_USER", "demo"),
         password=os.environ.get("DB_PASS", "demo"),
+    )
+
+
+def get_db_as(application_name: str):
+    # application_name flows through the proxy enricher → source_tag="ai-agent" → LLMPolicyEngine
+    return psycopg2.connect(
+        host=os.environ.get("PROXY_HOST", "proxy"),
+        port=int(os.environ.get("PROXY_PORT", 6432)),
+        dbname=os.environ.get("DB_NAME", "demo"),
+        user=os.environ.get("DB_USER", "demo"),
+        password=os.environ.get("DB_PASS", "demo"),
+        application_name=application_name,
     )
 
 
@@ -55,6 +68,27 @@ def execute_query(sql, fetch=True):
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(sql)
         rows = [dict(r) for r in cur.fetchall()] if fetch and sql.strip().upper().startswith("SELECT") else []
+        conn.commit()
+        return rows, None, False
+    except Exception as e:
+        conn.rollback()
+        blocked = getattr(e, "pgcode", None) == "42501"
+        return [], str(e), blocked
+    finally:
+        conn.close()
+
+
+def execute_ai_query(sql, application_name):
+    pq = _parser.parse(sql)
+    if pq.has_stacked and "DROP" in sql.upper():
+        return [], "demo safety net: stacked DROP simulated, not executed", True
+    conn = get_db_as(application_name)
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql)
+        rows = [dict(r) for r in cur.fetchall()] if (
+            sql.strip().upper().startswith("SELECT")
+        ) else []
         conn.commit()
         return rows, None, False
     except Exception as e:
@@ -237,12 +271,41 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def _chat(self, data):
         msg = data.get("message", "")
-        sql = build_chat(msg)
-        _, err, blocked = execute_query(sql, fetch=False)
-        shield = _shield_result(blocked)
-        if blocked:
-            self._json({"blocked": True, "shield": shield, "query": sql, "reply": "Blocked by Shield."}); return
-        self._json({"blocked": False, "shield": shield, "query": sql, "reply": _bot_reply(msg)})
+        # classic injection surface: INSERT raw message into chat_logs
+        log_sql = build_chat(msg)
+        _, log_err, log_blocked = execute_query(log_sql, fetch=False)
+        if log_blocked:
+            self._json({"blocked": True, "shield": _shield_result(True),
+                        "query": log_sql,
+                        "reply": "Blocked by Shield (chat-log INSERT)."})
+            return
+
+        # AI path: execute LLM-generated SQL tagged as ai-agent so LLMPolicyEngine activates
+        ai_sql, raw = llm_client.generate_sql(msg)
+        ai_app_name = f"ai-agent/{llm_client.LLM_MODEL}"
+        rows, err, ai_blocked = execute_ai_query(ai_sql, ai_app_name)
+        shield = _shield_result(ai_blocked)
+
+        if ai_blocked:
+            self._json({
+                "blocked": True,
+                "shield":  shield,
+                "query":   ai_sql,
+                "raw":     raw,
+                "reply":   "Shield blocked the AI-generated query. "
+                           "See the dashboard for which policy fired.",
+            })
+            return
+
+        reply = _format_chat_reply(msg, ai_sql, rows, err, raw)
+        self._json({
+            "blocked": False,
+            "shield":  shield,
+            "query":   ai_sql,
+            "raw":     raw,
+            "reply":   reply,
+            "results": rows,
+        })
 
     def _json(self, data):
         body = json.dumps(data).encode()
@@ -256,14 +319,16 @@ class DemoHandler(BaseHTTPRequestHandler):
         pass
 
 
-def _bot_reply(msg):
-    m = msg.lower()
-    if any(w in m for w in ("hello", "hi")): return "Hello! How can I help?"
-    if "help" in m: return "I can help with products, orders, or general questions."
-    if "order" in m: return "Share your order number and I'll look it up."
-    if "price" in m: return "Check our product catalog for latest prices!"
-    if any(w in m for w in ("bye", "thanks")): return "You're welcome! Have a great day."
-    return "Thanks for your message. Let me look into that."
+def _format_chat_reply(user_msg, sql, rows, err, raw):
+    if err:
+        return f"Database error while running my query: {err}"
+    if not rows:
+        return "I ran a query but it returned no rows."
+    preview = []
+    for r in rows[:5]:
+        preview.append(", ".join(f"{k}={v}" for k, v in r.items()))
+    suffix = "" if len(rows) <= 5 else f"\n... ({len(rows) - 5} more rows)"
+    return "Here's what I found:\n" + "\n".join(preview) + suffix
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

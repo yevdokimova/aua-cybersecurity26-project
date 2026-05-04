@@ -315,6 +315,54 @@ function appendChatMessage(role, text) {
 
 
 // ==================================================================
+// EXAMPLE CLICK-TO-TRY
+// ==================================================================
+
+function handleExampleClick(el) {
+  var fill    = el.dataset.fill;
+  var payload = el.dataset.payload;
+  if      (fill === 'search')  fillSearch(payload);
+  else if (fill === 'login')   fillLogin(payload);
+  else if (fill === 'contact') fillContact(payload);
+  else if (fill === 'chat')    fillChat(payload);
+}
+
+function fillSearch(text) {
+  var homeLink = document.querySelector('.nav-link');
+  showSection('home', homeLink);
+  var input = document.getElementById('search-input');
+  input.value = text;
+  input.focus();
+}
+
+function fillLogin(text) {
+  var loginLink = document.querySelectorAll('.nav-link')[1];
+  showSection('login', loginLink);
+  var input = document.getElementById('login-user');
+  input.value = text;
+  input.focus();
+}
+
+function fillContact(text) {
+  var contactLink = document.querySelectorAll('.nav-link')[2];
+  showSection('contact', contactLink);
+  var input = document.getElementById('contact-name');
+  input.value = text;
+  input.focus();
+}
+
+function fillChat(text) {
+  var widget = document.getElementById('chat-widget');
+  if (widget.classList.contains('collapsed')) {
+    toggleChat();
+  }
+  var input = document.getElementById('chat-input');
+  input.value = text;
+  input.focus();
+}
+
+
+// ==================================================================
 // UTILITY
 // ==================================================================
 

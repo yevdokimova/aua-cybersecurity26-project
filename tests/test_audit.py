@@ -35,7 +35,7 @@ def _parsed():
 def test_write_and_read(tmp_path):
     audit.write("search", "SELECT 1", _parsed(),
                 blocked=True, shield_enabled=True,
-                engine_verdict=_verdict())
+                engine_verdicts=[_verdict()])
     records = audit.read_all()
     assert len(records) == 1
     r = records[0]

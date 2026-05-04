@@ -238,6 +238,9 @@ class SignatureEngine(BaseEngine):
             return False
         if condition.table_blocklist is not None:
             blocked = {t.lower() for t in condition.table_blocklist}
-            if not any(t in blocked for t in query.tables):
+            if not any(
+                t in blocked or any(t.startswith(b + ".") for b in blocked)
+                for t in query.tables
+            ):
                 return False
         return True

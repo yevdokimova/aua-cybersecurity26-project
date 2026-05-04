@@ -1,15 +1,3 @@
-"""
-Audit dashboard HTTP server.
-
-Tiny stdlib HTTP server that serves the dashboard SPA and exposes:
-
-* ``GET  /api/logs``                  -- the full audit log as JSON
-* ``GET  /api/allowlist``             -- list allowlist entries
-* ``GET  /api/allowlist/<fp>``        -- fetch one entry
-* ``POST /api/allowlist``             -- add an entry
-* ``DELETE /api/allowlist/<fp>``      -- remove an entry
-"""
-
 import json
 import os
 import sys
@@ -26,10 +14,6 @@ _ALLOWLIST_PREFIX = "/api/allowlist"
 
 class LogHandler(BaseHTTPRequestHandler):
 
-    # ------------------------------------------------------------------
-    # GET
-    # ------------------------------------------------------------------
-
     def do_GET(self):
         if self.path == "/api/logs":
             return self._json(200, {"logs": audit.read_all()})
@@ -44,10 +28,6 @@ class LogHandler(BaseHTTPRequestHandler):
                 return self._json(404, {"error": "not found"})
             return self._json(200, asdict(entry))
         self._serve_file("logs.html")
-
-    # ------------------------------------------------------------------
-    # POST
-    # ------------------------------------------------------------------
 
     def do_POST(self):
         if self.path != _ALLOWLIST_PREFIX:
@@ -67,24 +47,15 @@ class LogHandler(BaseHTTPRequestHandler):
             return self._json(409, {"error": "fingerprint already allowlisted"})
         return self._json(201, asdict(entry))
 
-    # ------------------------------------------------------------------
-    # DELETE
-    # ------------------------------------------------------------------
-
     def do_DELETE(self):
         if not self.path.startswith(_ALLOWLIST_PREFIX + "/"):
             return self._json(404, {"error": "not found"})
         fp = self.path[len(_ALLOWLIST_PREFIX) + 1:]
         if not default_store.remove(fp):
             return self._json(404, {"error": "not found"})
-        # 204 No Content
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
 
     def _serve_file(self, name):
         fp = os.path.join(STATIC_DIR, name)
