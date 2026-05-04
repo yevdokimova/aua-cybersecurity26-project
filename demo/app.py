@@ -270,6 +270,7 @@ def _bot_reply(msg):
 
 if __name__ == "__main__":
     init_db()
+    _call_admin("/api/v1/mode", {"mode": "enforce" if SHIELD_ENABLED else "monitor"})
 
     app_port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 8000
 

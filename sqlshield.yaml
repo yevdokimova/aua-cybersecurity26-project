@@ -5,3 +5,22 @@ proxy:
 
 admin:
   port: 9090
+
+engines:
+  # enforce  — engine verdicts are respected (queries are actually blocked)
+  # monitor  — always allow but log what would have been blocked
+  # learning — always allow (anomaly baseline is still being built)
+  mode: enforce
+
+  signature:
+    # high   — all matched rules block (critical, high, medium, low)
+    # medium — critical + high + medium block  (default)
+    # low    — only critical + high block
+    strictness: medium
+
+  anomaly:
+    # Number of queries to observe before switching from learning to detection
+    learning_queries: 100
+
+    # Final anomaly score threshold above which a query is blocked (0.0–1.0)
+    block_threshold: 0.7

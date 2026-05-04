@@ -11,20 +11,9 @@ logging.basicConfig(
 logger = logging.getLogger("sqlshield")
 
 
-def _load_config() -> dict:
-    for name in ("sqlshield.yaml", "sqlshield.yml"):
-        if os.path.exists(name):
-            try:
-                import yaml
-                with open(name) as f:
-                    return yaml.safe_load(f) or {}
-            except Exception as exc:
-                logger.warning("could not parse %s: %s", name, exc)
-    return {}
-
-
 async def _run() -> None:
-    cfg       = _load_config()
+    from .config import load_config
+    cfg       = load_config()
     proxy_cfg = cfg.get("proxy", {})
     admin_cfg = cfg.get("admin", {})
 
