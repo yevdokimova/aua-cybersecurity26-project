@@ -9,10 +9,6 @@ _cached: dict | None = None
 
 
 def load_config() -> dict:
-    """
-    Load sqlshield.yaml (or .yml) once and cache the result.
-    Returns an empty dict if the file is missing or unparseable.
-    """
     global _cached
     if _cached is not None:
         return _cached
@@ -30,7 +26,6 @@ def load_config() -> dict:
 
 
 def _env_or(env_key: str, yaml_value, default):
-    """Return env var (if set) → YAML value (if present) → default."""
     raw = os.environ.get(env_key)
     if raw is not None:
         return raw

@@ -45,7 +45,6 @@ class Baseline:
     first_seen: float       = 0.0
     last_seen: float        = 0.0
     learning: bool          = True
-    # Autoencoder training data and metadata
     feature_vectors: list   = field(default_factory=list)
     ae_trained: bool        = False
     ae_threshold: float     = 0.0
@@ -87,7 +86,6 @@ def _mean_std(s: float, s2: float, n: int) -> tuple[float, float]:
 
 
 def _extract_features(query: ParsedQuery) -> list:
-    """8-dim feature vector: the same representation used by the autoencoder."""
     return [
         float(query.join_depth),
         float(query.literal_count),
@@ -171,11 +169,6 @@ class AnomalyEngine(BaseEngine):
             return {f"{u}|{r}": asdict(b) for (u, r), b in self._baselines.items()}
 
     def _train_autoencoder_for(self, key: tuple, baseline: Baseline) -> None:
-        """
-        Fits an 8→6→4→6→8 MLPRegressor autoencoder on the feature vectors
-        collected during the learning period.  Falls back silently if
-        scikit-learn is not installed or training fails.
-        """
         if not _SKLEARN_AVAILABLE or len(baseline.feature_vectors) < self.min_ae_samples:
             return
         try:
@@ -189,24 +182,16 @@ class AnomalyEngine(BaseEngine):
             )
             model.fit(X, X)
             errors = np.mean((X - model.predict(X)) ** 2, axis=1)
-            # Threshold: mean + 2σ of training reconstruction errors.
-            # Floor at 1e-4 to avoid triggering on floating-point noise
-            # when training data is perfectly uniform.
+            # floor at 1e-4 to avoid false positives when training data is perfectly uniform
             baseline.ae_threshold = max(float(errors.mean() + 2 * errors.std()), 1e-4)
             baseline.ae_max_error = max(float(errors.max()), baseline.ae_threshold)
             baseline.ae_trained   = True
             self._models[key]     = model
         except Exception:
-            pass  # fall back to statistical scoring
+            pass
 
     def _ae_score(self, query: ParsedQuery, baseline: Baseline,
                   key: tuple) -> Optional[tuple]:
-        """
-        Returns (score, reason, rule_id) when reconstruction error exceeds
-        the learned threshold, else None.
-
-        Score mapping: ae_threshold → 0.75 (just triggers block), ae_max_error → 1.0.
-        """
         if not baseline.ae_trained:
             return None
         model = self._models.get(key)
@@ -237,7 +222,6 @@ class AnomalyEngine(BaseEngine):
         reasons:  list[str]   = []
         rule_ids: list[str]   = []
 
-        # Primary: autoencoder reconstruction error (replaces ANOM-004 when trained)
         ae_result = self._ae_score(query, baseline, key)
         if ae_result:
             s, r, rid = ae_result

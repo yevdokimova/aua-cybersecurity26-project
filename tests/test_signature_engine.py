@@ -9,7 +9,15 @@ from sqlshield.parser import Parser
 from sqlshield.types import Action
 
 
-RULES = DEFAULT_RULES
+RULES = DEFAULT_RULES + [
+    Rule(
+        id="SIG-011",
+        name="Comment-based injection",
+        description="-- in a SELECT.",
+        severity="high",
+        conditions=[Condition(has_comment=True, query_types=["SELECT"])],
+    ),
+]
 
 
 @pytest.fixture
@@ -57,6 +65,14 @@ def test_sig004_comment_obfuscation(engine, parser):
 
 def test_sig005_system_table(engine, parser):
     sql = "SELECT table_name FROM information_schema.tables"
+    v = engine.inspect(parser.parse(sql))
+    assert v.action == Action.BLOCK
+    assert "SIG-005" in _ids(v)
+
+
+def test_sig005_system_table_bare(engine, parser):
+    """SQLite-style: schema is implicit, table name appears bare."""
+    sql = "SELECT name FROM sqlite_master"
     v = engine.inspect(parser.parse(sql))
     assert v.action == Action.BLOCK
     assert "SIG-005" in _ids(v)

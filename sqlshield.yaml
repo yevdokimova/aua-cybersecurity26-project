@@ -24,3 +24,26 @@ engines:
 
     # Final anomaly score threshold above which a query is blocked (0.0–1.0)
     block_threshold: 0.7
+
+  llm_policy:
+    # Tables AI agents are permitted to query
+    allowed_tables:
+      - products
+      - messages
+      - chat_logs
+
+    # Block INSERT / UPDATE / DELETE / DDL from AI agents
+    block_mutations: true
+
+    # Maximum LIMIT value allowed in AI-generated SELECTs
+    max_row_limit: 100
+
+    # Tables that always require a WHERE clause when accessed by AI agents
+    require_where_on:
+      - users
+
+    # Maximum number of JOINs allowed in a single AI-generated query
+    max_join_depth: 2
+
+    # Whether to block subqueries in AI-generated queries (off by default)
+    block_subqueries: false

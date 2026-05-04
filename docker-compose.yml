@@ -1,4 +1,17 @@
 services:
+  llm:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ~/.ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list 2>/dev/null | grep -q llama3.2"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   db:
     image: postgres:16
     environment:
@@ -35,10 +48,14 @@ services:
       DB_PASS: demo
       ADMIN_HOST: proxy
       ADMIN_PORT: ${ADMIN_PORT:-9090}
+      LLM_HOST: http://llm:11434
+      LLM_MODEL: llama3.2:3b
     volumes:
       - logs:/app/logs
     depends_on:
       db:
+        condition: service_healthy
+      llm:
         condition: service_healthy
 
   proxy:

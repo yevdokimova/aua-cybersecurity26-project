@@ -608,6 +608,88 @@ body {
 
 .chat-input-area button:hover { background: var(--primary-d); }
 
+/* ---- Card subtitle (shared by both example cards) --------------- */
+.card-subtitle {
+  font-size: .85rem;
+  color: var(--text-sec);
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+
+/* ---- Clickable example items ------------------------------------ */
+.example-item.clickable {
+  cursor: pointer;
+  transition: box-shadow .15s, border-color .15s, transform .1s;
+  position: relative;
+}
+
+.example-item.clickable:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.example-item.clickable::after {
+  content: "click to try \2192";
+  display: block;
+  font-size: .73rem;
+  color: var(--primary);
+  font-weight: 600;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+
+.example-item.clickable:hover::after {
+  opacity: 1;
+}
+
+/* ---- AI / Prompt-injection card --------------------------------- */
+.ai-examples-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 28px 36px;
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--amber);
+  margin-bottom: 24px;
+}
+
+.ai-examples-card h2 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+/* AI example items: amber code block */
+.example-item.ai-inject code {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.example-item.ai-inject.clickable:hover {
+  border-color: var(--amber);
+}
+
+.example-item.ai-inject.clickable::after {
+  color: var(--amber);
+}
+
+/* LLM rule badge */
+.llm-tag {
+  display: inline-block;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: .7rem;
+  font-weight: 700;
+  background: var(--amber-bg);
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 4px;
+  vertical-align: middle;
+  letter-spacing: .2px;
+}
+
 /* ---- Responsive -------------------------------------------------- */
 @media (max-width: 700px) {
   .topnav {
