@@ -141,6 +141,18 @@ DEFAULT_RULES: list[Rule] = [
             Condition(sql_contains=["convert(int,"]),
         ],
     ),
+    Rule(
+        id="SIG-011",
+        name="Comment auth bypass",
+        description="String-closing quote followed by a comment marker to truncate SQL and bypass authentication checks.",
+        severity="critical",
+        conditions=[
+            Condition(sql_contains=["'--"]),
+            Condition(sql_contains=["' --"]),
+            Condition(sql_contains=["'#"]),
+            Condition(sql_contains=["'/*"]),
+        ],
+    ),
 ]
 
 

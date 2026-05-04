@@ -104,9 +104,13 @@ class AnomalyEngine(BaseEngine):
     def __init__(self,
                  learning_queries: int = _DEFAULT_LEARNING_QUERIES,
                  block_threshold: float = _BLOCK_THRESHOLD,
+                 z_threshold: float = _Z_THRESHOLD,
+                 min_ae_samples: int = _MIN_AE_SAMPLES,
                  store_path: Optional[str] = None) -> None:
         self.learning_queries = learning_queries
         self.block_threshold  = block_threshold
+        self.z_threshold      = z_threshold
+        self.min_ae_samples   = min_ae_samples
         self.store_path       = store_path or os.environ.get(
             "BASELINES_FILE",
             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -166,17 +170,13 @@ class AnomalyEngine(BaseEngine):
         with self._lock:
             return {f"{u}|{r}": asdict(b) for (u, r), b in self._baselines.items()}
 
-    # ------------------------------------------------------------------
-    # Autoencoder (Option B)
-    # ------------------------------------------------------------------
-
     def _train_autoencoder_for(self, key: tuple, baseline: Baseline) -> None:
         """
         Fits an 8→6→4→6→8 MLPRegressor autoencoder on the feature vectors
         collected during the learning period.  Falls back silently if
         scikit-learn is not installed or training fails.
         """
-        if not _SKLEARN_AVAILABLE or len(baseline.feature_vectors) < _MIN_AE_SAMPLES:
+        if not _SKLEARN_AVAILABLE or len(baseline.feature_vectors) < self.min_ae_samples:
             return
         try:
             X = np.array(baseline.feature_vectors, dtype=float)
@@ -197,7 +197,7 @@ class AnomalyEngine(BaseEngine):
             baseline.ae_trained   = True
             self._models[key]     = model
         except Exception:
-            pass  # gracefully fall back to statistical scoring
+            pass  # fall back to statistical scoring
 
     def _ae_score(self, query: ParsedQuery, baseline: Baseline,
                   key: tuple) -> Optional[tuple]:
@@ -230,9 +230,6 @@ class AnomalyEngine(BaseEngine):
             "ANOM-AE",
         )
 
-    # ------------------------------------------------------------------
-    # Scoring
-    # ------------------------------------------------------------------
 
     def _score(self, query: ParsedQuery, baseline: Baseline,
                key: tuple) -> tuple:
@@ -273,7 +270,7 @@ class AnomalyEngine(BaseEngine):
             z_lit  = _z(query.literal_count, *baseline.literal_stats())
             z_join = _z(query.join_depth,    *baseline.join_stats())
             z_max  = max(z_lit, z_join)
-            if z_max > _Z_THRESHOLD:
+            if z_max > self.z_threshold:
                 scores.append(min(1.0, z_max / 6.0))
                 reasons.append(f"ANOM-004: complexity spike (z_lit={z_lit:.1f}, z_join={z_join:.1f})")
                 rule_ids.append("ANOM-004")
@@ -288,10 +285,6 @@ class AnomalyEngine(BaseEngine):
         if not scores:
             return 0.0, [], []
         return max(scores), reasons, rule_ids
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
 
     def _load(self) -> None:
         if not os.path.exists(self.store_path):

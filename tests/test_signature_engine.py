@@ -9,15 +9,7 @@ from sqlshield.parser import Parser
 from sqlshield.types import Action
 
 
-RULES = DEFAULT_RULES + [
-    Rule(
-        id="SIG-011",
-        name="Comment-based injection",
-        description="-- in a SELECT.",
-        severity="high",
-        conditions=[Condition(has_comment=True, query_types=["SELECT"])],
-    ),
-]
+RULES = DEFAULT_RULES
 
 
 @pytest.fixture
