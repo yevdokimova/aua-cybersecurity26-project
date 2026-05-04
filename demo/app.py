@@ -61,8 +61,8 @@ def _shield_result(blocked: bool) -> dict | None:
 
 def execute_query(sql, fetch=True):
     pq = _parser.parse(sql)
-    if pq.has_stacked and "DROP" in sql.upper():
-        return [], "demo safety net: stacked DROP simulated, not executed", True
+    if pq.has_stacked and "DROP" in sql.upper() and not SHIELD_ENABLED:
+        return [], "demo safety net: stacked DROP simulated, not executed", False
     conn = get_db()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -280,8 +280,15 @@ class DemoHandler(BaseHTTPRequestHandler):
                         "reply": "Blocked by Shield (chat-log INSERT)."})
             return
 
-        # AI path: execute LLM-generated SQL tagged as ai-agent so LLMPolicyEngine activates
-        ai_sql, raw = llm_client.generate_sql(msg)
+        ai_sql, text_reply, raw = llm_client.generate_response(msg)
+
+        # Conversational response — no SQL to run
+        if ai_sql is None:
+            self._json({"blocked": False, "shield": None, "query": None,
+                        "raw": raw, "reply": text_reply, "results": []})
+            return
+
+        # SQL response — run through proxy so LLMPolicyEngine activates
         ai_app_name = f"ai-agent/{llm_client.LLM_MODEL}"
         rows, err, ai_blocked = execute_ai_query(ai_sql, ai_app_name)
         shield = _shield_result(ai_blocked)

